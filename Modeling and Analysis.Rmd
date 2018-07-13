@@ -1,0 +1,238 @@
+---
+title: "Time Series Modeling, Analysis and Decomposition"
+output: html_notebook
+---
+
+```{r, message=FALSE, warning=FALSE}
+library('tidyverse')
+library('tseries')
+```
+
+
+Time series analysis:
+  * Stationary vs. Non-Stationary
+  * Additive vs. Exponential
+  * ARMA / ARIMA models
+  * Filters: Kalman, Holt-Winters
+  * Stochastic Processes, Random Walk, Wiener Process, Brownian Motion
+  
+  
+```{r}
+set.seed(100)
+
+# monthly data, normally distributed
+# 100 stoltzcoin average trade price per month
+# Standard deviation of 3
+dates = seq(from = lubridate::ymd('2011-07-01'), 
+            to = lubridate::ymd('2018-06-30'), 
+            by = 'months')
+
+n = length(dates)
+mu = 100
+sd = 3
+
+time_series = tibble(date = dates, stoltzcoin = rnorm(n = n, mean = mu, sd = sd), 
+                     type = 'stationary', trend = 'none')
+
+ggplot(time_series, aes(x = date, y = stoltzcoin)) + 
+  geom_line() + geom_smooth(method = lm, 
+                            formula = y ~ x, se = FALSE) + 
+  geom_hline(aes(yintercept = mean(stoltzcoin)), color="red")
+```
+
+
+
+#### Perform regression and look at the residuals
+
+```{r}
+ts_fit = lm(stoltzcoin ~ date, data = time_series)
+ts_fit
+```
+
+
+```{r}
+res = tibble(residuals = resid(ts_fit))
+ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides = 'l')
+```
+
+```{r}
+ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 30) + geom_density(col = 'red', size = 1.5)
+```
+
+
+## Always test for stationarity even if it looks stationary
+##### Augmented Dickey-Fuller is a typical test - tseries::adf.test()
+  * Tests null hypothesis that the autoregressive model has a unit root
+  * Stationarity means rejecting the null hypothesis
+  * We will look for p-value < 0.05
+
+
+```{r}
+# adf.test only accepts univariate time series data, zoo object will be used
+adf.test(zoo::zoo(time_series$stoltzcoin, time_series$date))
+
+```
+
+
+
+### Add a linear trend for the example
+#### Stoltzcoin has been going up by 2 each month
+#### Known as "trend stationary"
+
+```{r}
+going_up_by = 2
+trend = seq(from = 0, 
+            to = (n-1) * going_up_by,
+            by = going_up_by)
+
+ts_lin_trend = tibble(date = dates, stoltzcoin = time_series$stoltzcoin + trend, 
+                     type = 'non-stationary', trend = 'linear')
+
+ggplot(ts_lin_trend, aes(x = date, y = stoltzcoin)) + 
+  geom_line() + geom_smooth(method = lm, 
+                            formula = y ~ x, se = FALSE) + 
+  geom_hline(aes(yintercept = mean(stoltzcoin)), color="red")
+```
+
+
+
+#### Perform regression and look at the residuals
+
+```{r}
+ts_fit = lm(stoltzcoin ~ date, data = ts_lin_trend)
+ts_fit
+```
+
+
+```{r}
+res = tibble(residuals = resid(ts_fit))
+ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides = 'l')
+```
+
+```{r}
+ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 30) + geom_density(col = 'red', size = 1.5)
+```
+
+
+```{r}
+adf.test(zoo::zoo(ts_lin_trend$stoltzcoin, ts_lin_trend$date))
+```
+
+
+## Why is it stationary????
+
+
+
+### Add a seasonal component to the linear trend
+#### Stoltzcoin fluctuates throughout the year
+
+```{r}
+going_up_by = 2
+trend = seq(from = 0, 
+            to = (n-1) * going_up_by,
+            by = going_up_by)
+seasonal = sin(1:n) * 10
+
+ts_lin_trend_seasonal = tibble(date = dates, stoltzcoin = time_series$stoltzcoin + trend + seasonal, 
+                     type = 'non-stationary', trend = 'linear')
+
+ggplot(ts_lin_trend_seasonal, aes(x = date, y = stoltzcoin)) + 
+  geom_line() + geom_smooth(method = lm, 
+                            formula = y ~ x, se = FALSE) + 
+  geom_hline(aes(yintercept = mean(stoltzcoin)), color="red")
+```
+
+
+
+
+#### Perform regression and look at the residuals
+
+```{r}
+ts_fit = lm(stoltzcoin ~ date, data = ts_lin_trend_seasonal)
+ts_fit
+```
+
+
+```{r}
+res = tibble(residuals = resid(ts_fit))
+ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides = 'l')
+```
+
+```{r}
+ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 30) + geom_density(col = 'red', size = 1.5)
+```
+
+
+```{r}
+adf.test(zoo::zoo(ts_lin_trend_seasonal$stoltzcoin, ts_lin_trend_seasonal$date))
+```
+
+
+
+
+### Add an exponential trend to the seasonal component
+#### Stoltzcoin has increased in volatility over the years
+  * Stoltzcoin now has:
+    * A positive and growing linear trend
+    * Seasonality
+
+```{r}
+going_up_by = 2
+trend = seq(from = 0, 
+            to = (n-1) * going_up_by,
+            by = going_up_by)
+seasonal = sin(1:n) * 1:n
+
+ts_lin_trend_seasonal_exp = tibble(date = dates, stoltzcoin = time_series$stoltzcoin + trend + seasonal, 
+                     type = 'non-stationary', trend = 'linear')
+
+ggplot(ts_lin_trend_seasonal_exp, aes(x = date, y = stoltzcoin)) + 
+  geom_line() + geom_smooth(method = lm, 
+                            formula = y ~ x, se = FALSE) + 
+  geom_hline(aes(yintercept = mean(stoltzcoin)), color="red")
+```
+
+
+
+
+#### Perform regression and look at the residuals
+
+```{r}
+ts_fit = lm(stoltzcoin ~ date, data = ts_lin_trend_seasonal_exp)
+ts_fit
+```
+
+
+```{r}
+res = tibble(residuals = resid(ts_fit))
+ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides = 'l')
+```
+
+```{r}
+ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 30) + geom_density(col = 'red', size = 1.5)
+```
+
+
+```{r}
+adf.test(zoo::zoo(ts_lin_trend_seasonal_exp$stoltzcoin, ts_lin_trend_seasonal_exp$date))
+```
+
+
+## R's decompose function does a lot for you
+```{r}
+d1y =  as.numeric(lubridate::year(min(ts_lin_trend_seasonal_exp$date)))
+d1m = as.numeric(lubridate::month(min(ts_lin_trend_seasonal_exp$date)))
+d2y =  as.numeric(lubridate::year(max(ts_lin_trend_seasonal_exp$date)))
+d2m = as.numeric(lubridate::month(max(ts_lin_trend_seasonal_exp$date)))
+
+x = ts(ts_lin_trend_seasonal_exp$stoltzcoin, start=c(d1y, d1m), end=c(d2y, d2m), frequency=12)
+
+plot(decompose(x, type = 'additive'))
+
+```
+
+
+```{r}
+plot(decompose(x, type = 'multiplicative'))
+```
+
