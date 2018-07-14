@@ -5,19 +5,46 @@ output: html_notebook
 
 ```{r, message=FALSE, warning=FALSE}
 library('tidyverse')
+library('tidyquant')
 library('tseries')
+library('gghighlight')
+load('api_key.rdata')
 ```
 
 
-Time series analysis:
+#### Time series analysis:  
+
   * Stationary vs. Non-Stationary
   * Additive vs. Exponential
   * ARMA / ARIMA models
   * Filters: Kalman, Holt-Winters
   * Stochastic Processes, Random Walk, Wiener Process, Brownian Motion
   
+
+#### What is a stationary time series?
+
+"A time series is stationary if a shift in time doesn't cause a change in the shape of the distribution. Basic properties of the distribution like the mean, variance, and covariance are constant over time."
+
+![Stationary vs Seasonal Time series - http://www.statisticshowto.com/stationarity/](image1.png)
+
+
+
+#### Different types of stationarity:  
+
+  * Strict Stationarity - basically doesn't exist... essentially nothing changes based off of time...
+  * First-Order Stationarity - means never change, but other statistics can change
+  * Second-Order (Weak) Stationarity - constant mean, variance, and autocovariance that doesn't change with time 
+  * Trend-Stationary Models - fluctuate around deterministic trend (series mean). Trend is typically linear or quadratic, amplitude of fluctuations stays constant
+  * Difference-Stationary Models - one or more differences of the data need to be taken to make it stationary
+
+
+#### Why do we care about stationarity?  
+
+Most statistical models that have been developed assume stationarity.
+
+
   
-```{r}
+```{r, warning=FALSE}
 set.seed(100)
 
 # monthly data, normally distributed
@@ -56,7 +83,7 @@ ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides
 ```
 
 ```{r}
-ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 30) + geom_density(col = 'red', size = 1.5)
+ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40) + geom_density(col = 'red', size = 1.5)
 ```
 
 
@@ -110,16 +137,13 @@ ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides
 ```
 
 ```{r}
-ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 30) + geom_density(col = 'red', size = 1.5)
+ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40) + geom_density(col = 'red', size = 1.5)
 ```
 
 
 ```{r}
 adf.test(zoo::zoo(ts_lin_trend$stoltzcoin, ts_lin_trend$date))
 ```
-
-
-## Why is it stationary????
 
 
 
@@ -159,7 +183,7 @@ ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides
 ```
 
 ```{r}
-ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 30) + geom_density(col = 'red', size = 1.5)
+ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40) + geom_density(col = 'red', size = 1.5)
 ```
 
 
@@ -209,7 +233,7 @@ ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides
 ```
 
 ```{r}
-ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 30) + geom_density(col = 'red', size = 1.5)
+ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40) + geom_density(col = 'red', size = 1.5)
 ```
 
 
@@ -234,5 +258,106 @@ plot(decompose(x, type = 'additive'))
 
 ```{r}
 plot(decompose(x, type = 'multiplicative'))
+```
+
+
+### Example from decompose function
+#### random portion should just look like white noise (otherwise you've likely missed something)
+```{r}
+require(graphics)
+
+m <- decompose(co2)
+plot(m)
+```
+
+
+
+```{r, warning=FALSE, message=FALSE}
+dow = tq_index("DOW") %>%
+  tq_get(get = "stock.prices")
+head(dow, 10)
+```
+
+
+```{r warning=FALSE, message=FALSE}
+p = ggplot(dow, aes(x = date, y = close, col = symbol)) + 
+  geom_line() + 
+  gghighlight(max(close) > 250) + 
+  theme_minimal() + 
+  facet_wrap(~ symbol)
+print(p)
+```
+
+
+
+## Is BA a stationary time series?
+
+#### Can you simply zoom in and find a portion that is stationary?
+```{r}
+ba = dow %>% 
+  filter(symbol == 'BA') %>% 
+  select(date, close)
+plotly::ggplotly(ggplot(ba, aes(x = date, y = close)) + geom_line() + geom_smooth(method = lm, se = FALSE))
+```
+
+
+```{r}
+adf.test(zoo::zoo(ba$close, ba$date))
+```
+
+
+
+```{r}
+ts_fit = lm(close ~ date, data = ba)
+ts_fit
+```
+
+
+```{r}
+res = tibble(residuals = resid(ts_fit))
+ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides = 'l')
+```
+
+```{r}
+ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40) + geom_density(col = 'red', size = 1.5)
+```
+
+
+
+
+
+
+#### Are the daily returns stationary?
+
+```{r}
+ret = ba %>%
+  tq_transmute(close, mutate_fun = dailyReturn)
+ggplot(ret, aes(x = date, y = daily.returns)) + geom_line() + geom_smooth(method = lm, se = FALSE)
+```
+
+
+```{r}
+adf.test(zoo::zoo(ret$daily.returns, ret$date))
+```
+
+
+```{r}
+ts_fit = lm(daily.returns ~ date, data = ret)
+ts_fit
+```
+
+
+```{r}
+res = tibble(residuals = resid(ts_fit))
+ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides = 'l')
+```
+
+```{r}
+ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40) + geom_density(col = 'red', size = 1.5)
+```
+
+
+```{r}
+
 ```
 
