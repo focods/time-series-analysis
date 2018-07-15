@@ -8,7 +8,9 @@ library('tidyverse')
 library('tidyquant')
 library('tseries')
 library('gghighlight')
-load('api_key.rdata')
+library('gganimate')
+
+#load('api_key.rdata')
 ```
 
 
@@ -358,6 +360,27 @@ ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40
 
 
 ```{r}
+ts_fit1 = lm(daily.returns ~ date, data = ret)
+price = tibble(residuals = resid(ts_fit1))
+ts_fit2 = lm(close ~ date, data = ba)
+price.diff = tibble(residuals = resid(ts_fit2))
 
+ba1 = bind_cols(daysFromStart = 1:nrow(res), price, price.diff)
+ba2 = ba1 %>%
+  gather(price_type, price, -daysFromStart)
+ba2
+```
+
+```{r message=FALSE, warning=FALSE}
+
+ggplot(ba2, aes(daysFromStart, price)) + 
+  geom_point() + 
+  # Here comes the gganimate code
+  transition_states(
+    price_type,
+    transition_length = 2,
+    state_length = 1
+  ) +
+  view_follow()
 ```
 
