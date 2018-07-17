@@ -42,6 +42,22 @@ ggplot(corn %>%
 ```
 
 
+
+#### Working at a fund  
+
+  * Futures trading - what's a future?
+  * How do you know what a good price is?
+    * Build a model, of course... this is where the quants come in
+  * How do you set a lookback window?
+    * Based off of industry, sector, 99% domain knowledge
+    * Does it correlate with anything else? -- extremely risky!
+    * Is the correlation lagged (rain & crops)
+    * Knowledge of time series is important
+  * Setup something to give a confidence interval on prices
+    * Make a decision as to how risky you want to be
+    * As prices move decide when to buy/sell
+
+
 ```{r}
 ggplot(rain %>%
          filter(date > '2007-01-01'), 
@@ -214,7 +230,9 @@ acf(diff(log(AirPassengers)))
 pacf(diff(log(AirPassengers)))
 ```
 
+<hr>
 
+<center>
 ## The ARIMA Model
 
 #### Function of (p,d,q)
@@ -224,8 +242,11 @@ pacf(diff(log(AirPassengers)))
 #### MA -- q -- error of the model as a combination of previous error terms
 
 Non-Seasonal ARIMA Model is built:
-![ARIMA](arima.png)
+![ARIMA](arima.png)  
 
+</center>
+  
+  
 ```{r}
 fit <- arima(log(AirPassengers), 
              order = c(0, 1, 1))
