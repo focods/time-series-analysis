@@ -5,7 +5,9 @@ output:
     df_print: paged
 ---
 
-```{r, message=FALSE, warning=FALSE}
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, cache=TRUE)
+
 library('graphics')
 library('tibbletime')
 library('tidyverse')
@@ -15,15 +17,69 @@ library('gghighlight')
 library('gganimate')
 
 data("AirPassengers")
+corn = read_csv('corn-prices-historical-chart-data.csv') # data from: https://www.macrotrends.net/2532/corn-prices-historical-chart-data
 
+rain = read_csv('rainfall_data.csv') %>% 
+  rename(Year = `\tYear`) %>%
+  mutate(date = as.Date(paste0(`Year`,'-',Month,'-01')))
+         # data from: http://sdwebx.worldbank.org/climateportal/index.cfm?page=downscaled_data_download&menu=historical
 #load('api_key.rdata')
+
 ```
+<hr>  
+<br>
+<center>
+### Let me tell you the story of how
+## I lost $98 Million...
+</center>
+
+
+```{r}
+ggplot(corn %>% 
+         filter(date > '2007-01-01' & date < '2016-01-01'), 
+       aes(x = date, y = value)) + 
+  geom_line() + ggtitle('Historical Corn Prices - USD ($) Per Bushel')
+```
+
+
+```{r}
+ggplot(rain %>%
+         filter(date > '2007-01-01'), 
+       aes(x = date, y = pr, col=Country)) + geom_line()
+```
+
+```{r}
+c = corn %>% 
+  tbl_time(date) %>%
+  as_period('monthly', side='start') %>%
+  mutate(date = lubridate::floor_date(date,'month'))
+
+r = rain %>%
+  select(date, Country, pr) %>%
+  spread(Country, pr)
+
+df = c %>%
+  left_join(r, by = 'date') %>%
+  rename(corn = value) %>%
+  drop_na() #%>% gather(nam,val,-date)
+
+p = ggplot(df) 
+p + geom_point(aes(x = corn, y = AUS)) 
+p + geom_point(aes(x = corn, y = BRA))
+p + geom_point(aes(x = corn, y = USA))
+```
+
+```{r}
+plot(df %>% select(-date))
+```
+
+
 
 
 #### Time series analysis:  
 
   * Stationary vs. Non-Stationary
-  * Additive vs. Exponential
+  * Additive vs. Multiplicative
   * ARMA / ARIMA models
   * Filters: Kalman, Holt-Winters
   * Stochastic Processes, Random Walk, Wiener Process, Brownian Motion
@@ -49,8 +105,6 @@ data("AirPassengers")
 #### Why do we care about stationarity?  
 
 Most statistical models that have been developed assume stationarity.
-
-
 
 
 ```{r}
@@ -107,9 +161,19 @@ ggplot(apdf_prediction, aes(x=date, y=passengers, col=type)) +
 
 ```{r}
 rolling_mean = rollify(mean, window = 8)
-tmp = apdf %>% mutate(ma = rolling_mean(passengers))
+tmp = apdf %>% mutate(ma = rolling_mean(passengers)) %>% drop_na()
 ggplot(tmp, aes(x=date)) + geom_line(aes(y=passengers)) + geom_line(aes(y=ma), col = 'red')
 ```
+
+
+
+### Decomposition Example  
+
+#### Multiplicative model  
+
+#### Forecast = Trend * Seasonality * Cycle * Error
+
+[Decomposition Google Sheet](https://docs.google.com/spreadsheets/d/1Gf4ZMhKsmBO_pSSXYg0XdKQKTsIWRbNsEIXn_08BqUg/edit?usp=sharing)
 
 
 
@@ -134,15 +198,33 @@ plot(diff(log(AirPassengers)))
 ```{r}
 adf.test(diff(log(AirPassengers)))
 ```
+
+```{r}
+acf(log(AirPassengers))
+```
+
+#### ACF is good for identifying MA component
 ```{r}
 acf(diff(log(AirPassengers)))
 ```
 
 
+#### PACF is good for identifying AR component
 ```{r}
 pacf(diff(log(AirPassengers)))
 ```
 
+
+## The ARIMA Model
+
+#### Function of (p,d,q)
+
+#### AR -- p -- number of lags
+#### I -- d -- number of differences
+#### MA -- q -- error of the model as a combination of previous error terms
+
+Non-Seasonal ARIMA Model is built:
+![ARIMA](arima.png)
 
 ```{r}
 fit <- arima(log(AirPassengers), 
@@ -150,6 +232,9 @@ fit <- arima(log(AirPassengers),
 pred <- predict(fit, n.ahead = 10*12)
 ts.plot(AirPassengers,2.718^pred$pred, log = "y", lty = c(1,3))
 ```
+
+
+#### 
 
 ```{r}
 fit <- arima(log(AirPassengers), 
@@ -162,243 +247,13 @@ ts.plot(AirPassengers,2.718^pred$pred, log = "y", lty = c(1,3))
 ```
 
 
-```{r}
-
-```
-
-
-
-```{r, warning=FALSE}
-set.seed(100)
-
-# monthly data, normally distributed
-# 100 stoltzcoin average trade price per month
-# Standard deviation of 3
-dates = seq(from = lubridate::ymd('2011-07-01'), 
-            to = lubridate::ymd('2018-06-30'), 
-            by = 'months')
-
-n = length(dates)
-mu = 100
-sd = 3
-
-time_series = tibble(date = dates, stoltzcoin = rnorm(n = n, mean = mu, sd = sd), 
-                     type = 'stationary', trend = 'none')
-
-ggplot(time_series, aes(x = date, y = stoltzcoin)) + 
-  geom_line() + geom_smooth(method = lm, 
-                            formula = y ~ x, se = FALSE) + 
-  geom_hline(aes(yintercept = mean(stoltzcoin)), color="red")
-```
-
-
-
-#### Perform regression and look at the residuals
-
-```{r}
-ts_fit = lm(stoltzcoin ~ date, data = time_series)
-ts_fit
-```
-
-
-```{r}
-res = tibble(residuals = resid(ts_fit))
-ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides = 'l')
-```
-
-```{r}
-ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40) + geom_density(col = 'red', size = 1.5)
-```
-
-
-## Always test for stationarity even if it looks stationary
-##### Augmented Dickey-Fuller is a typical test - tseries::adf.test()
-  * Tests null hypothesis that the autoregressive model has a unit root
-  * Stationarity means rejecting the null hypothesis
-  * We will look for p-value < 0.05
-
-
-```{r}
-# adf.test only accepts univariate time series data, zoo object will be used
-adf.test(zoo::zoo(time_series$stoltzcoin, time_series$date))
-
-```
-
-
-
-### Add a linear trend for the example
-#### Stoltzcoin has been going up by 2 each month
-#### Known as "trend stationary"
-
-```{r}
-going_up_by = 2
-trend = seq(from = 0, 
-            to = (n-1) * going_up_by,
-            by = going_up_by)
-
-ts_lin_trend = tibble(date = dates, stoltzcoin = time_series$stoltzcoin + trend, 
-                     type = 'non-stationary', trend = 'linear')
-
-ggplot(ts_lin_trend, aes(x = date, y = stoltzcoin)) + 
-  geom_line() + geom_smooth(method = lm, 
-                            formula = y ~ x, se = FALSE) + 
-  geom_hline(aes(yintercept = mean(stoltzcoin)), color="red")
-```
-
-
-
-#### Perform regression and look at the residuals
-
-```{r}
-ts_fit = lm(stoltzcoin ~ date, data = ts_lin_trend)
-ts_fit
-```
-
-
-```{r}
-res = tibble(residuals = resid(ts_fit))
-ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides = 'l')
-```
-
-```{r}
-ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40) + geom_density(col = 'red', size = 1.5)
-```
-
-
-```{r}
-adf.test(zoo::zoo(ts_lin_trend$stoltzcoin, ts_lin_trend$date))
-```
-
-
-
-### Add a seasonal component to the linear trend
-#### Stoltzcoin fluctuates throughout the year
-
-```{r}
-going_up_by = 2
-trend = seq(from = 0, 
-            to = (n-1) * going_up_by,
-            by = going_up_by)
-seasonal = sin(1:n) * 10
-
-ts_lin_trend_seasonal = tibble(date = dates, stoltzcoin = time_series$stoltzcoin + trend + seasonal, 
-                     type = 'non-stationary', trend = 'linear')
-
-ggplot(ts_lin_trend_seasonal, aes(x = date, y = stoltzcoin)) + 
-  geom_line() + geom_smooth(method = lm, 
-                            formula = y ~ x, se = FALSE) + 
-  geom_hline(aes(yintercept = mean(stoltzcoin)), color="red")
-```
-
-
-
-
-#### Perform regression and look at the residuals
-
-```{r}
-ts_fit = lm(stoltzcoin ~ date, data = ts_lin_trend_seasonal)
-ts_fit
-```
-
-
-```{r}
-res = tibble(residuals = resid(ts_fit))
-ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides = 'l')
-```
-
-```{r}
-ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40) + geom_density(col = 'red', size = 1.5)
-```
-
-
-```{r}
-adf.test(zoo::zoo(ts_lin_trend_seasonal$stoltzcoin, ts_lin_trend_seasonal$date))
-```
-
-
-
-
-### Add an exponential trend to the seasonal component
-#### Stoltzcoin has increased in volatility over the years
-  * Stoltzcoin now has:
-    * A positive and growing linear trend
-    * Seasonality
-
-```{r}
-going_up_by = 2
-trend = seq(from = 0, 
-            to = (n-1) * going_up_by,
-            by = going_up_by)
-seasonal = sin(1:n) * 1:n
-
-ts_lin_trend_seasonal_exp = tibble(date = dates, stoltzcoin = time_series$stoltzcoin + trend + seasonal, 
-                     type = 'non-stationary', trend = 'linear')
-
-ggplot(ts_lin_trend_seasonal_exp, aes(x = date, y = stoltzcoin)) + 
-  geom_line() + geom_smooth(method = lm, 
-                            formula = y ~ x, se = FALSE) + 
-  geom_hline(aes(yintercept = mean(stoltzcoin)), color="red")
-```
-
-
-
-
-#### Perform regression and look at the residuals
-
-```{r}
-ts_fit = lm(stoltzcoin ~ date, data = ts_lin_trend_seasonal_exp)
-ts_fit
-```
-
-
-```{r}
-res = tibble(residuals = resid(ts_fit))
-ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides = 'l')
-```
-
-```{r}
-ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40) + geom_density(col = 'red', size = 1.5)
-```
-
-
-```{r}
-adf.test(zoo::zoo(ts_lin_trend_seasonal_exp$stoltzcoin, ts_lin_trend_seasonal_exp$date))
-```
-
-
-## R's decompose function does a lot for you
-```{r}
-d1y =  as.numeric(lubridate::year(min(ts_lin_trend_seasonal_exp$date)))
-d1m = as.numeric(lubridate::month(min(ts_lin_trend_seasonal_exp$date)))
-d2y =  as.numeric(lubridate::year(max(ts_lin_trend_seasonal_exp$date)))
-d2m = as.numeric(lubridate::month(max(ts_lin_trend_seasonal_exp$date)))
-
-x = ts(ts_lin_trend_seasonal_exp$stoltzcoin, start=c(d1y, d1m), end=c(d2y, d2m), frequency=12)
-
-plot(decompose(x, type = 'additive'))
-
-```
-
-
-```{r}
-plot(decompose(x, type = 'multiplicative'))
-```
-
-
-### Example from decompose function
-#### random portion should just look like white noise (otherwise you've likely missed something)
-```{r}
-require(graphics)
-
-m <- decompose(co2)
-plot(m)
-```
 
 
 
 ```{r, warning=FALSE, message=FALSE}
 dow = tq_index("DOW") %>%
-  tq_get(get = "stock.prices")
+  tq_get(get = "stock.prices") %>%
+  drop_na()
 head(dow, 10)
 ```
 
@@ -465,37 +320,16 @@ adf.test(zoo::zoo(ret$daily.returns, ret$date))
 ```
 
 
-```{r}
-ts_fit = lm(daily.returns ~ date, data = ret)
-ts_fit
-```
+```{r, message=FALSE, warning=FALSE}
+log_close = ba %>% 
+  mutate(log_close = log(close)) %>%
+  mutate(daysFromStart = 1:nrow(ba))
+lc = log_close %>%
+  select(daysFromStart, close, log_close) %>%
+  gather(price_type, close, -daysFromStart)
 
-
-```{r}
-res = tibble(residuals = resid(ts_fit))
-ggplot(res, aes(x = 1:nrow(res), y = residuals)) + geom_point() + geom_rug(sides = 'l')
-```
-
-```{r}
-ggplot(res, aes(x = residuals)) + geom_histogram(aes(y = ..density..), bins = 40) + geom_density(col = 'red', size = 1.5)
-```
-
-
-```{r}
-ts_fit1 = lm(daily.returns ~ date, data = ret)
-price = tibble(residuals = resid(ts_fit1))
-ts_fit2 = lm(close ~ date, data = ba)
-price.diff = tibble(residuals = resid(ts_fit2))
-
-ba1 = bind_cols(daysFromStart = 1:nrow(res), price, price.diff)
-ba2 = ba1 %>%
-  gather(price_type, price, -daysFromStart)
-ba2
-```
-
-```{r message=FALSE, warning=FALSE}
-
-ggplot(ba2, aes(daysFromStart, price)) + 
+ggplot(lc, 
+       aes(daysFromStart, close)) + 
   geom_point() + 
   # Here comes the gganimate code
   transition_states(
@@ -505,4 +339,55 @@ ggplot(ba2, aes(daysFromStart, price)) +
   ) +
   view_follow()
 ```
+
+# Differenced log?
+```{r, message=FALSE, warning=FALSE}
+log_close = ba %>% 
+  mutate(close = close / 100) %>% # divide by 100 for animation purposes
+  mutate(log_close = log(close),
+         log_close_diff = 10 * (log_close - lag(log_close))) %>% # multiply by 10 for animation purposes
+  mutate(daysFromStart = 1:nrow(ba))
+
+lc = log_close %>%
+  select(daysFromStart, close, log_close, log_close_diff) %>%
+  gather(price_type, close, -daysFromStart) %>%
+  drop_na()
+
+ggplot(lc, 
+       aes(daysFromStart, close)) + 
+  geom_point(col = 'darkgreen', alpha = 0.5) + 
+  # Here comes the gganimate code
+  transition_states(
+    price_type,
+    transition_length = 2,
+    state_length = 1
+  )
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(lc, 
+       aes(close)) + 
+  geom_density(fill = 'darkgreen', alpha = 0.25) + 
+  # Here comes the gganimate code
+  transition_states(
+    price_type,
+    transition_length = 2,
+    state_length = 1
+  )
+
+```
+
+
+```{r}
+lc = ba %>% 
+  mutate(close = close) %>% # divide by 100 for animation purposes
+  mutate(log_close = log(close),
+         log_close_diff = log_close - lag(log_close)) %>%
+  drop_na()
+
+ggplot(lc, aes(x = log_close_diff)) + geom_histogram(bins = 40)
+```
+
+
 
